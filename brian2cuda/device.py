@@ -1,42 +1,39 @@
 '''
 Module implementing the CUDA "standalone" device.
 '''
-import os
 import inspect
-from collections import defaultdict, Counter
-import tempfile
-from distutils import ccompiler
+import os
 import re
+import tempfile
+from collections import Counter, defaultdict
+from distutils import ccompiler
 from itertools import chain
 
 import numpy as np
-
 from brian2.codegen.cpp_prefs import get_compiler_and_args
-from brian2.codegen.translation import make_statements
-from brian2.core.clocks import Clock, defaultclock, EventClock
-from brian2.core.namespace import get_local_namespace
-from brian2.core.preferences import prefs, PreferenceError
-from brian2.core.variables import ArrayVariable, DynamicArrayVariable, Constant
-from brian2.parsing.rendering import CPPNodeRenderer
-from brian2.devices.device import all_devices
-from brian2.synapses.synapses import Synapses, SynapticPathway
-from brian2.utils.filetools import copy_directory, ensure_directory
-from brian2.utils.stringtools import get_identifiers, stripped_deindented_lines
 from brian2.codegen.generators.cpp_generator import c_data_type
-from brian2.utils.logger import get_logger
-from brian2.units import second
-from brian2.monitors import SpikeMonitor, StateMonitor, EventMonitor
+from brian2.codegen.translation import make_statements
+from brian2.core.clocks import Clock, EventClock, defaultclock
+from brian2.core.namespace import get_local_namespace
+from brian2.core.preferences import PreferenceError, prefs
+from brian2.core.variables import ArrayVariable, Constant, DynamicArrayVariable
+from brian2.devices.cpp_standalone.device import CPPStandaloneDevice, CPPWriter
+from brian2.devices.device import all_devices
 from brian2.groups import Subgroup
-
-from brian2.devices.cpp_standalone.device import CPPWriter, CPPStandaloneDevice
 from brian2.input.spikegeneratorgroup import SpikeGeneratorGroup
+from brian2.monitors import EventMonitor, SpikeMonitor, StateMonitor
+from brian2.parsing.rendering import CPPNodeRenderer
+from brian2.synapses.synapses import Synapses, SynapticPathway
+from brian2.units import second
+from brian2.utils.filetools import copy_directory, ensure_directory
+from brian2.utils.logger import get_logger
+from brian2.utils.stringtools import get_identifiers, stripped_deindented_lines
 
-from brian2cuda.utils.stringtools import replace_floating_point_literals
-from brian2cuda.utils.gputools import select_gpu, get_nvcc_path
+from brian2cuda.utils.gputools import get_nvcc_path, select_gpu
 from brian2cuda.utils.logger import report_issue_message
+from brian2cuda.utils.stringtools import replace_floating_point_literals
 
-from .codeobject import CUDAStandaloneCodeObject, CUDAStandaloneAtomicsCodeObject
-
+from .codeobject import CUDAStandaloneAtomicsCodeObject, CUDAStandaloneCodeObject
 
 __all__ = []
 
@@ -445,8 +442,7 @@ class CUDAStandaloneDevice(CPPStandaloneDevice):
                 # if hasattr(var, 'owner') and isinstance(v.owner, Clock):
                 if isinstance(var.owner, SpikeGeneratorGroup):
                     self.spikegenerator_eventspaces.append(varname)
-        for var in self.eventspace_arrays.keys():
-            del self.arrays[var]
+
         subgroups_with_spikemonitor = set()
         for codeobj in self.code_objects.values():
             if isinstance(codeobj.owner, SpikeMonitor):
@@ -488,9 +484,9 @@ class CUDAStandaloneDevice(CPPStandaloneDevice):
                         profile_statemonitor_vars=profile_statemonitor_vars,
                         subgroups_with_spikemonitor=sorted(subgroups_with_spikemonitor),
                         timed_arrays=timed_arrays,
-                        variables_on_host_only=self.variables_on_host_only)
-        # Reinsert deleted entries, in case we use self.arrays later? maybe unnecassary...
-        self.arrays.update(self.eventspace_arrays)
+                        variables_on_host_only=self.variables_on_host_only,
+                        )
+
         writer.write('objects.*', arr_tmp)
 
     def generate_main_source(self, writer):
@@ -1421,6 +1417,9 @@ class CUDAStandaloneDevice(CPPStandaloneDevice):
                 self.variables_on_host_only.append(varname)
             if var.name in ('t', 'dt', 'timestep'):
                 # We manage time variables on host and pass them by value to kernels
+                self.variables_on_host_only.append(varname)
+            if var.name.endswith("space") and var.name.startswith("_"):
+                # eventspace variables are on host
                 self.variables_on_host_only.append(varname)
         for var, varname in self.dynamic_arrays.items():
             varnames = ['_synaptic_pre', '_synaptic_post']

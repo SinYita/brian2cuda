@@ -99,7 +99,7 @@ void brian::set_variable_by_name(std::string name, std::string s_value) {
         s_value = "0";
 	// non-dynamic arrays
 	{% for var, varname in array_specs | dictsort(by='value') %}
-    {% if not var in dynamic_array_specs and not var.read_only %}
+    {% if var not in dynamic_array_specs and var not in eventspace_arrays and not var.read_only %}
     if (name == "{{var.owner.name}}.{{var.name}}") {
         var_size = {{var.size}};
         data_size = {{var.size}}*sizeof({{c_data_type(var.dtype)}});
@@ -184,7 +184,7 @@ void brian::set_variable_by_name(std::string name, std::string s_value) {
 }
 //////////////// arrays ///////////////////
 {% for var, varname in array_specs | dictsort(by='value') %}
-{% if not var in dynamic_array_specs %}
+{% if var not in dynamic_array_specs and var not in eventspace_arrays %}
 {{c_data_type(var.dtype)}} * brian::{{varname}};
 {{c_data_type(var.dtype)}} * brian::dev{{varname}};
 __device__ {{c_data_type(var.dtype)}} * brian::d{{varname}};
@@ -682,7 +682,7 @@ void _dealloc_arrays()
     {% endfor %}
 
     {% for var, varname in array_specs | dictsort(by='value') %}
-    {% if not var in dynamic_array_specs %}
+    {% if var not in dynamic_array_specs and var not in eventspace_arrays%}
     if({{varname}}!=0)
     {
         delete [] {{varname}};
@@ -783,7 +783,7 @@ extern thrust::device_vector<int32_t> _dev_{{varname}}_eventspace;
 
 //////////////// arrays ///////////////////
 {% for var, varname in array_specs | dictsort(by='value') %}
-{% if not var in dynamic_array_specs %}
+{% if var not in dynamic_array_specs and var not in eventspace_arrays %}
 extern {{c_data_type(var.dtype)}} * {{varname}};
 extern {{c_data_type(var.dtype)}} * dev{{varname}};
 extern __device__ {{c_data_type(var.dtype)}} *d{{varname}};
