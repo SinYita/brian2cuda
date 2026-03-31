@@ -4,6 +4,7 @@ Module containing fixtures and hooks used by the pytest test suite.
 # Use brian2's pytest configuration for the brian2cuda tests (see PR #232 for details)
 import brian2.conftest as brian2_conftest
 from brian2.conftest import *
+from brian2.devices.device import get_device, set_device
 
 # Add a cuda implementation for the fake_randn_randn_fixture,
 # used in test_stateupdaters.py
@@ -27,3 +28,24 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "cuda_standalone: to be used with standalone_only marker"
     )
+
+
+def pytest_sessionstart(session):
+    """
+    Ensure we start with a standalone device.
+
+    Some older Brian2 pytest hooks expect `get_device().project_dir` to exist
+    during reporting. The runtime device does not provide this attribute and
+    can trigger INTERNALERRORs before tests even run.
+    """
+    try:
+        # Don't compile here; tests decide when to run/compile.
+        set_device("cuda_standalone", directory=None, compile=False)
+    except Exception:
+        # Fall back to a minimal shim to avoid pytest INTERNALERRORs.
+        try:
+            dev = get_device()
+            if not hasattr(dev, "project_dir"):
+                dev.project_dir = None
+        except Exception:
+            pass

@@ -28,7 +28,6 @@ PYTHON_BIN="python3"
 VENV_DIR_NAME=".venv-brian2cuda-issue269"
 RUN_BENCH="0"
 PYTEST_ARGS="-q"
-PYTEST_DEVICE="cuda_standalone"
 
 usage() {
   cat <<'EOF'
@@ -42,7 +41,6 @@ Options:
   --python <bin>        Python executable (default: python3)
   --venv <dir-name>     Venv directory name (default: .venv-brian2cuda-issue269)
   --pytest-args "<arg>" Extra pytest args (default: -q)
-  --pytest-device <dev> Brian2 test device (default: cuda_standalone)
   --run-bench           Also run ./bench.sh after tests
   -h, --help            Show this help
 
@@ -64,7 +62,6 @@ while [[ $# -gt 0 ]]; do
     --python) PYTHON_BIN="$2"; shift 2 ;;
     --venv) VENV_DIR_NAME="$2"; shift 2 ;;
     --pytest-args) PYTEST_ARGS="$2"; shift 2 ;;
-    --pytest-device) PYTEST_DEVICE="$2"; shift 2 ;;
     --run-bench) RUN_BENCH="1"; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
@@ -161,20 +158,10 @@ print("brian2:", brian2.__file__)
 print("brian2cuda:", brian2cuda.__file__)
 PY
 
-log "Running test suite: pytest ${PYTEST_ARGS} --device=${PYTEST_DEVICE} brian2cuda/tests"
-# brian2's pytest hooks expect a standalone device that provides `project_dir`.
-# Running with the runtime device can trigger INTERNALERRORs such as:
-#   AttributeError: 'RuntimeDevice' object has no attribute 'project_dir'
-#
-# Prefer using the --device option provided by brian2's conftest. If the option
-# does not exist for this Brian2 version, fall back to setting the default device
-# via env var.
-if pytest ${PYTEST_ARGS} --device="${PYTEST_DEVICE}" brian2cuda/tests; then
-  true
-else
-  log "pytest failed (or --device unsupported). Retrying with BRIAN2_DEVICE=${PYTEST_DEVICE}"
-  BRIAN2_DEVICE="${PYTEST_DEVICE}" pytest ${PYTEST_ARGS} brian2cuda/tests
-fi
+log "Running test suite: pytest ${PYTEST_ARGS} brian2cuda/tests"
+# brian2cuda/tests/conftest.py forces starting with cuda_standalone (compile=False)
+# to satisfy older Brian2 pytest hooks that expect `get_device().project_dir`.
+pytest ${PYTEST_ARGS} brian2cuda/tests
 
 if [[ "${RUN_BENCH}" == "1" ]]; then
   if [[ -f "./bench.sh" ]]; then
