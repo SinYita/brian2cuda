@@ -175,6 +175,7 @@ log "Running test suite via brian2 PreferencePlugin (sets config.brian_prefs)"
 #   AttributeError: 'Config' object has no attribute 'brian_prefs'
 python - <<PY
 import pytest
+import brian2cuda  # registers brian2cuda preferences (devices.cuda_standalone)
 from brian2.tests import PreferencePlugin
 from brian2.core.preferences import prefs
 
