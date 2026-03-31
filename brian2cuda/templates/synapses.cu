@@ -133,8 +133,8 @@ _run_kernel_{{codeobj_name}}(
             int queue_size = synapses_queue[partition].size();
 
             {% if bundle_mode %}
-            // Grid-stride over bundles: distribute bundles across workers
-            // For each bundle, all threads within the block process synapses cooperatively
+            // Grid-stride over bundles: distribute bundles across workers.
+            // For each bundle, all threads within the block process synapses cooperatively.
             for (int bundle_idx = worker_id; bundle_idx < queue_size; bundle_idx += num_workers)
             {
                 int bundle_id = synapses_queue[partition].at(bundle_idx);
@@ -143,7 +143,7 @@ _run_kernel_{{codeobj_name}}(
                 int32_t* synapse_ids = {{pathway.name}}_synapse_ids;
                 int32_t* synapse_bundle = synapse_ids + synapses_offset;
 
-                // Loop over work items: each work item can be processed by multiple threads
+                // Loop over work items: each work item can be processed by multiple threads.
                 for (int i = tid; i < bundle_size * threads_per_bundle; i += THREADS_PER_BLOCK)
                 {
                     int syn_in_bundle_idx = i % threads_per_bundle;
@@ -156,24 +156,28 @@ _run_kernel_{{codeobj_name}}(
                         {
                             int32_t _idx = synapse_bundle[j];
 
-            {% else %}{# no bundle_mode #}
-
-                    // Grid-stride: each worker processes different synapse ranges
-                    for(int j = tid + worker_id * THREADS_PER_BLOCK; 
-                        j < queue_size; j += THREADS_PER_BLOCK * num_workers)
-                    {
-                        int32_t _idx = synapses_queue[partition].at(j);
-                        {
-
-            {% endif %}{# bundle_mode #}
-
                             ///// vector_code /////
                             {{vector_code|autoindent}}
                         }
                     }
                 }
             }
+            {% else %}{# no bundle_mode #}
+            // Grid-stride: each worker processes different synapse ranges.
+            for(int j = tid + worker_id * THREADS_PER_BLOCK;
+                j < queue_size;
+                j += THREADS_PER_BLOCK * num_workers)
+            {
+                int32_t _idx = synapses_queue[partition].at(j);
+
+                ///// vector_code /////
+                {{vector_code|autoindent}}
+            }
+            {% endif %}{# bundle_mode #}
         }
+
+    }  // end scoped _idx section
+}  // end _run_kernel_{{codeobj_name}}
 
 {% endblock %}
 
