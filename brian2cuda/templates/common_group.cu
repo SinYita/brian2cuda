@@ -8,6 +8,7 @@
 #include "brianlib/common_math.h"
 #include "brianlib/cuda_utils.h"
 #include "brianlib/stdint_compat.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <stdint.h>
@@ -46,6 +47,7 @@ void _before_run_{{codeobj_name}}();
 #include "brianlib/common_math.h"
 #include "brianlib/cuda_utils.h"
 #include "brianlib/stdint_compat.h"
+#include <algorithm>
 #include <cmath>
 #include <stdint.h>
 #include <ctime>

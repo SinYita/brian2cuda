@@ -335,25 +335,31 @@ if ({{pathway.name}}_max_size > 0)
                 num_parallel_blocks * sizeof(int32_t),
                 cudaMemcpyDeviceToHost);
         
-        // Calculate dynamic num_blocks based on queue sizes
-        // Heuristic: 4 blocks per partition when queue is non-empty
-        // (occupancy-based: 4 small blocks fit well on each SM)
+        // Calculate dynamic num_blocks based on queue sizes.
+        //
+        // Important: The heterogeneous-delay kernel maps blocks to partitions via:
+        //   partition = bid % num_parallel_blocks
+        // so we must launch at least one block per partition to guarantee
+        // gridDim.x / num_parallel_blocks >= 1 (i.e. num_workers >= 1).
+        //
+        // Heuristic: use a fixed number of workers per partition (bounded by a
+        // conservative global cap). Empty partitions will exit quickly in-kernel.
         int blocks_per_partition = 4;
-        num_blocks = 0;
         int max_queue_size = 0;
         
         for (int i = 0; i < num_parallel_blocks; i++) {
             int qs = (int)host_queue_sizes[i];
-            max_queue_size = max(max_queue_size, qs);
-            if (qs > 0) {
-                num_blocks += blocks_per_partition;
-            }
+            max_queue_size = std::max(max_queue_size, qs);
         }
         
         // Cap total blocks at conservative limit based on typical GPU specs
         // (32 SMs × 4 blocks per partition = 128 blocks; × 4 workers = 512 blocks)
         int max_total_blocks = 512;
-        num_blocks = min(num_blocks, max_total_blocks);
+        int max_workers_per_partition = max_total_blocks / num_parallel_blocks;
+        if (max_workers_per_partition < 1)
+            max_workers_per_partition = 1;
+        int workers_per_partition = std::min(blocks_per_partition, max_workers_per_partition);
+        num_blocks = num_parallel_blocks * workers_per_partition;
         
         // If all queues are empty, set num_blocks to 0 to skip kernel launch
         if (max_queue_size == 0) {
