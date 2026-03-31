@@ -323,25 +323,34 @@ run_regression_tests() {
     log_section "RUNNING REGRESSION TESTS"
     
     local test_dir="${SCRIPT_DIR}/brian2cuda/tests"
+    local tools_test_suite_dir="${SCRIPT_DIR}/brian2cuda/tools/test_suite"
     
     if [ ! -d "$test_dir" ]; then
         log_error "Test directory not found: $test_dir"
         return 1
     fi
     
-    log_info "Discovering and running all tests..."
-    cd "$test_dir"
+    log_info "Running tests from: $test_dir"
+    cd "$SCRIPT_DIR"
     
     # Run pytest if available, else use unittest
     if command -v pytest &> /dev/null; then
         log_info "Running tests with pytest..."
-        run_cmd "pytest -v --tb=short -x" || return 1
-    elif python -m pytest &> /dev/null; then
+        if [ -d "$tools_test_suite_dir" ]; then
+            run_cmd "pytest -v --tb=short -x \"$test_dir\" --ignore=\"$tools_test_suite_dir\"" || return 1
+        else
+            run_cmd "pytest -v --tb=short -x \"$test_dir\"" || return 1
+        fi
+    elif python -c "import pytest" &> /dev/null; then
         log_info "Running tests with Python pytest module..."
-        run_cmd "python -m pytest -v --tb=short -x" || return 1
+        if [ -d "$tools_test_suite_dir" ]; then
+            run_cmd "python -m pytest -v --tb=short -x \"$test_dir\" --ignore=\"$tools_test_suite_dir\"" || return 1
+        else
+            run_cmd "python -m pytest -v --tb=short -x \"$test_dir\"" || return 1
+        fi
     else
         log_info "Running tests with unittest..."
-        run_cmd "python -m unittest discover -v" || return 1
+        run_cmd "python -m unittest discover -v -s \"$test_dir\" -p \"test_*.py\"" || return 1
     fi
     
     log_info "✓ All regression tests passed"
