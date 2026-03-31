@@ -311,62 +311,21 @@ if ({{pathway.name}}_max_size > 0)
     }
     else  // heterogeneous delays
     {
-        // Phase 2: Read queue sizes for heterogeneous delay dynamic block assignment
-        // Note: queue object members (queue_sizes pointer, current_offset, num_blocks)
-        // are accessible from host-side code
-        
-        // Calculate offset based on current_offset
-        int queue_offset = {{pathway.name}}.queue->current_offset * 
-                          {{pathway.name}}.queue->num_blocks;
-        volatile int32_t* dev_queue_sizes_ptr = 
-            {{pathway.name}}.queue->queue_sizes + queue_offset;
-        
-        // Allocate host buffer for current queue sizes (num_parallel_blocks entries)
-        volatile int32_t* host_queue_sizes = (volatile int32_t*)malloc(
-            num_parallel_blocks * sizeof(int32_t));
-        if (!host_queue_sizes) {
-            printf("ERROR: Failed to allocate host buffer for queue_sizes\n");
-            exit(1);
-        }
-        
-        // Copy queue sizes from device for current queue offset
-        cudaMemcpy((int32_t*)host_queue_sizes,
-                (int32_t*)dev_queue_sizes_ptr,
-                num_parallel_blocks * sizeof(int32_t),
-                cudaMemcpyDeviceToHost);
-        
-        // Calculate dynamic num_blocks based on queue sizes.
+        // Safe heuristic launch configuration for heterogeneous delays.
         //
-        // Important: The heterogeneous-delay kernel maps blocks to partitions via:
-        //   partition = bid % num_parallel_blocks
-        // so we must launch at least one block per partition to guarantee
-        // gridDim.x / num_parallel_blocks >= 1 (i.e. num_workers >= 1).
+        // IMPORTANT: `{{pathway.name}}` and its `queue` live in device memory
+        // (declared as `__device__` in objects.cu) and must not be dereferenced
+        // from host code. Therefore, we do not attempt to read queue sizes here.
         //
-        // Heuristic: use a fixed number of workers per partition (bounded by a
-        // conservative global cap). Empty partitions will exit quickly in-kernel.
+        // Instead, launch a small fixed number of workers per partition.
+        // Empty partitions will exit quickly inside the kernel.
         int blocks_per_partition = 4;
-        int max_queue_size = 0;
-        
-        for (int i = 0; i < num_parallel_blocks; i++) {
-            int qs = (int)host_queue_sizes[i];
-            max_queue_size = std::max(max_queue_size, qs);
-        }
-        
-        // Cap total blocks at conservative limit based on typical GPU specs
-        // (32 SMs × 4 blocks per partition = 128 blocks; × 4 workers = 512 blocks)
-        int max_total_blocks = 512;
+        int max_total_blocks = 512;  // conservative cap
         int max_workers_per_partition = max_total_blocks / num_parallel_blocks;
         if (max_workers_per_partition < 1)
             max_workers_per_partition = 1;
         int workers_per_partition = std::min(blocks_per_partition, max_workers_per_partition);
         num_blocks = num_parallel_blocks * workers_per_partition;
-        
-        // If all queues are empty, set num_blocks to 0 to skip kernel launch
-        if (max_queue_size == 0) {
-            num_blocks = 0;
-        }
-        
-        free((void*)host_queue_sizes);
     }
     // only call kernel if neurons spiked (else num_blocks is zero)
     if (num_blocks != 0) {
