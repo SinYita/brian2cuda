@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='brian2cuda',
-    version='dev',
+    version='0.0.0.dev0',
     packages=find_packages(),
     package_data={# include template files
                   'brian2cuda': ['templates/*.cu',
