@@ -120,39 +120,49 @@ _run_kernel_{{codeobj_name}}(
         }
         else  // heterogeneous delay mode
         {
+            // Phase 3: Multi-block parallelism for heterogeneous delay effect application
+            // Remap block indices to enable multiple workers per partition
+            int num_parallel_blocks = {{pathway.name}}.queue->num_blocks;
+            int partition = bid % num_parallel_blocks;
+            int worker_id = bid / num_parallel_blocks;
+            int num_workers = gridDim.x / num_parallel_blocks;
+            
             cudaVector<int32_t>* synapses_queue;
             {{pathway.name}}.queue->peek(&synapses_queue);
 
-            int queue_size = synapses_queue[bid].size();
+            int queue_size = synapses_queue[partition].size();
 
             {% if bundle_mode %}
-            // use a fixed number of threads per bundle, i runs through all those threads of all bundles
-            // for threads_per_bundle == 1, we have one thread per bundle (parallel)
-            for (int i = tid; i < queue_size*threads_per_bundle; i+=THREADS_PER_BLOCK)
+            // Grid-stride over bundles: distribute bundles across workers
+            // For each bundle, all threads within the block process synapses cooperatively
+            for (int bundle_idx = worker_id; bundle_idx < queue_size; bundle_idx += num_workers)
             {
-                // bundle_idx runs through all bundles
-                int bundle_idx = i / threads_per_bundle;
-                // syn_in_bundle_idx runs through all threads in a single bundle
-                int syn_in_bundle_idx = i % threads_per_bundle;
-
-                int bundle_id = synapses_queue[bid].at(bundle_idx);
+                int bundle_id = synapses_queue[partition].at(bundle_idx);
                 int bundle_size = {{pathway.name}}_num_synapses_by_bundle[bundle_id];
                 int synapses_offset = {{pathway.name}}_synapses_offset_by_bundle[bundle_id];
                 int32_t* synapse_ids = {{pathway.name}}_synapse_ids;
                 int32_t* synapse_bundle = synapse_ids + synapses_offset;
 
-                // loop through synapses of this bundle with all available threads_per_bundle
-                // if threads_per_bundle == 1, this is serial
-                for (int j = syn_in_bundle_idx; j < bundle_size; j+=threads_per_bundle)
+                // Loop over work items: each work item can be processed by multiple threads
+                for (int i = tid; i < bundle_size * threads_per_bundle; i += THREADS_PER_BLOCK)
                 {
-                    int32_t _idx = synapse_bundle[j];
+                    int syn_in_bundle_idx = i % threads_per_bundle;
+                    int synapse_row = i / threads_per_bundle;
+                    
+                    if (synapse_row < bundle_size)
+                    {
+                        // loop through synapses with stride of threads_per_bundle
+                        for (int j = syn_in_bundle_idx; j < bundle_size; j += threads_per_bundle)
+                        {
+                            int32_t _idx = synapse_bundle[j];
 
             {% else %}{# no bundle_mode #}
 
-                    // use one thread per synapse
-                    for(int j = tid; j < queue_size; j+=THREADS_PER_BLOCK)
+                    // Grid-stride: each worker processes different synapse ranges
+                    for(int j = tid + worker_id * THREADS_PER_BLOCK; 
+                        j < queue_size; j += THREADS_PER_BLOCK * num_workers)
                     {
-                        int32_t _idx = synapses_queue[bid].at(j);
+                        int32_t _idx = synapses_queue[partition].at(j);
                         {
 
             {% endif %}{# bundle_mode #}
@@ -294,6 +304,59 @@ if ({{pathway.name}}_max_size > 0)
             //TODO collect info abt mean, std of num spiking neurons per time
             //step and print INFO at end of simulation
         }
+    }
+    else  // heterogeneous delays
+    {
+        // Phase 2: Read queue sizes for heterogeneous delay dynamic block assignment
+        // Note: queue object members (queue_sizes pointer, current_offset, num_blocks)
+        // are accessible from host-side code
+        
+        // Calculate offset based on current_offset
+        int queue_offset = {{pathway.name}}.queue->current_offset * 
+                          {{pathway.name}}.queue->num_blocks;
+        volatile int32_t* dev_queue_sizes_ptr = 
+            {{pathway.name}}.queue->queue_sizes + queue_offset;
+        
+        // Allocate host buffer for current queue sizes (num_parallel_blocks entries)
+        volatile int32_t* host_queue_sizes = (volatile int32_t*)malloc(
+            num_parallel_blocks * sizeof(int32_t));
+        if (!host_queue_sizes) {
+            printf("ERROR: Failed to allocate host buffer for queue_sizes\n");
+            exit(1);
+        }
+        
+        // Copy queue sizes from device for current queue offset
+        cudaMemcpy((int32_t*)host_queue_sizes,
+                (int32_t*)dev_queue_sizes_ptr,
+                num_parallel_blocks * sizeof(int32_t),
+                cudaMemcpyDeviceToHost);
+        
+        // Calculate dynamic num_blocks based on queue sizes
+        // Heuristic: 4 blocks per partition when queue is non-empty
+        // (occupancy-based: 4 small blocks fit well on each SM)
+        int blocks_per_partition = 4;
+        num_blocks = 0;
+        int max_queue_size = 0;
+        
+        for (int i = 0; i < num_parallel_blocks; i++) {
+            int qs = (int)host_queue_sizes[i];
+            max_queue_size = max(max_queue_size, qs);
+            if (qs > 0) {
+                num_blocks += blocks_per_partition;
+            }
+        }
+        
+        // Cap total blocks at conservative limit based on typical GPU specs
+        // (32 SMs × 4 blocks per partition = 128 blocks; × 4 workers = 512 blocks)
+        int max_total_blocks = 512;
+        num_blocks = min(num_blocks, max_total_blocks);
+        
+        // If all queues are empty, set num_blocks to 0 to skip kernel launch
+        if (max_queue_size == 0) {
+            num_blocks = 0;
+        }
+        
+        free((void*)host_queue_sizes);
     }
     // only call kernel if neurons spiked (else num_blocks is zero)
     if (num_blocks != 0) {

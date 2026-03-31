@@ -20,12 +20,25 @@ private:
     // TODO: consider using data of type char*, since it does not have a cunstructor
     scalar* volatile m_data;        //pointer to allocated memory
     volatile size_type m_capacity;  //how much memory is allocated, should ALWAYS >= size
-    volatile size_type m_size;      //how many elements are stored in this vector
+    volatile size_type* m_size;     //how many elements are stored in this vector
+    bool m_size_owned;
 
 public:
     __device__ cudaVector()
     {
-        m_size = 0;
+        m_capacity = 0;
+        m_data = NULL;
+        m_size_owned = true;
+        m_size = (size_type*)malloc(sizeof(size_type));
+        if(m_size != NULL)
+        {
+            *m_size = 0;
+        }
+        else
+        {
+            printf("ERROR while creating cudaVector size variable in cudaVector.h (constructor)\n");
+            assert(m_size != NULL);
+        }
         if(INITIAL_SIZE > 0)
         {
             m_data = (scalar*)malloc(sizeof(scalar) * INITIAL_SIZE);
@@ -44,6 +57,10 @@ public:
     __device__ ~cudaVector()
     {
         free(m_data);
+        if(m_size_owned)
+        {
+            free((void*)m_size);
+        }
     };
 
     __device__ scalar* getDataPointer()
@@ -51,55 +68,53 @@ public:
         return m_data;
     };
 
-    __device__ set_size_address(volatile size_type* size)
+    __device__ void set_size_address(volatile size_type* size)
     {
-        // TODO:
-        //  1. Mofigy m_size to be a pointer
-        //  2. Change it's address in here (not sure if method call needs 'volatile'?
-        //  3. In spikequeue.h, after initializing the queues, declare a
-        //     volatile array of size of queues and change each queues m_size
-        //     parameter with this function here.
-        //  4. In synapses.cu, get the queue size by indexing this new array
-        //     with current_offset and Memcpy it to host to set the correct kernel
-        //     dimensions.
+        if(m_size_owned)
+        {
+            free((void*)m_size);
+            m_size_owned = false;
+        }
+        m_size = size;
+        *m_size = 0;
     };
 
     __device__ scalar& at(size_type index)
     {
-        if (index < 0 || index >= m_size)
+        if (index < 0 || index >= *m_size)
         {
             // TODO: check for proper exception throwing in cuda kernels
-            printf("ERROR returning a reference to index %d in cudaVector::at() (size = %u)\n", index, m_size);
-            assert(index < m_size);
+            printf("ERROR returning a reference to index %d in cudaVector::at() (size = %u)\n", index, *m_size);
+            assert(index < *m_size);
         }
         return m_data[index];
     };
 
     __device__ void push(scalar elem)
     {
-        assert(m_size <= m_capacity);
-        if(m_capacity == m_size)
+        assert(*m_size <= m_capacity);
+        if(m_capacity == *m_size)
         {
             // increase capacity
             reserve(m_capacity*2 + 1);
         }
-        if(m_size < m_capacity)
+        if(*m_size < m_capacity)
         {
-            m_data[m_size] = elem;
-            m_size++;
+            m_data[*m_size] = elem;
+            (*m_size)++;
         }
     };
 
     __device__ void update(size_type pos, scalar elem)
     {
-        if(pos <= m_size)
+        if(pos <= *m_size)
         {
             m_data[pos] = elem;
         }
         else
         {
-            printf("ERROR invalid index %d, must be in range 0 - %d\n", pos, m_size);
-            assert(pos <= m_size);
+            printf("ERROR invalid index %d, must be in range 0 - %d\n", pos, *m_size);
+            assert(pos <= *m_size);
         }
     };
 
@@ -107,16 +122,16 @@ public:
     {
         if (new_size > m_capacity)
             reserve(new_size * 2);
-        m_size = new_size;
+        *m_size = new_size;
     }
 
     __device__ size_type increaseSizeBy(size_type add_size)
     {
-        size_type old_size = m_size;
+        size_type old_size = *m_size;
         size_type new_size = old_size + add_size;
         if (new_size > m_capacity)
             reserve(new_size * 2);
-        m_size = new_size;
+        *m_size = new_size;
         return old_size;
     }
 
@@ -161,12 +176,12 @@ public:
     //does not overwrite old data, just resets number of elements stored to 0
     __device__ void reset()
     {
-        m_size = 0;
+        *m_size = 0;
     };
 
     __device__ size_type size()
     {
-        return m_size;
+        return *m_size;
     };
 };
 

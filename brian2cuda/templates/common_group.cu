@@ -9,6 +9,7 @@
 #include "brianlib/cuda_utils.h"
 #include "brianlib/stdint_compat.h"
 #include <cmath>
+#include <cstdlib>
 #include <stdint.h>
 #include <ctime>
 #include <stdio.h>

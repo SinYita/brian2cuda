@@ -32,6 +32,7 @@ private:
 public:
     //these vectors should ALWAYS be the same size, since each index refers to a triple of (pre_id, syn_id, post_id)
     cudaVector<DTYPE_int>** synapses_queue;
+    volatile size_type* queue_sizes;
 
     //our connectivity matrix with dimensions (num_blocks) * neuron_N
     //each element
@@ -54,7 +55,7 @@ public:
 
     // When we have 0 synapses, prepare() is not called in synapses_initialise_queue.cu
     // and for destroy() to still work, synapses_queue needs to be a null pointer
-    __device__ CudaSpikeQueue(): synapses_queue(0) {};
+    __device__ CudaSpikeQueue(): synapses_queue(0), queue_sizes(0) {};
 
     //Since we can't have a destructor, we need to call this function manually
     __device__ void destroy()
@@ -63,6 +64,11 @@ public:
         {
             delete [] synapses_queue;
             synapses_queue = 0;
+        }
+        if(queue_sizes)
+        {
+            delete [] queue_sizes;
+            queue_sizes = 0;
         }
     }
 
@@ -118,6 +124,12 @@ public:
             {
                 printf("ERROR while allocating memory with size %ld in spikequeue.h/prepare()\n", sizeof(cudaVector<DTYPE_int>*)*num_queues);
             }
+
+            queue_sizes = new size_type[num_queues * num_blocks];
+            if(!queue_sizes)
+            {
+                printf("ERROR while allocating memory with size %ld in spikequeue.h/prepare()\n", sizeof(size_type)*num_queues*num_blocks);
+            }
         }
         __syncthreads();
 
@@ -132,6 +144,12 @@ public:
             if(!synapses_queue[i])
             {
                 printf("ERROR while allocating memory with size %ld in spikequeue.h/prepare()\n", sizeof(cudaVector<DTYPE_int>)*num_blocks);
+            }
+
+            int queue_offset = i * num_blocks;
+            for (int j = 0; j < num_blocks; j++)
+            {
+                synapses_queue[i][j].set_size_address(queue_sizes + queue_offset + j);
             }
         }
     };
@@ -450,5 +468,16 @@ public:
         cudaVector<DTYPE_int>** _synapses_queue)
     {
         *(_synapses_queue) =  &(synapses_queue[current_offset][0]);
+    }
+
+    __device__ void peek_queue_sizes(
+        volatile size_type** _queue_sizes)
+    {
+        *(_queue_sizes) = &(queue_sizes[current_offset * num_blocks]);
+    }
+
+    __device__ volatile size_type* current_queue_sizes_ptr()
+    {
+        return &(queue_sizes[current_offset * num_blocks]);
     }
 };
