@@ -114,6 +114,13 @@ else
   die "nvcc not found (need CUDA toolkit on server)"
 fi
 
+log "Detecting GPU compute capability via nvidia-smi"
+GPU_COMPUTE_CAPABILITY="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
+if [[ -z "${GPU_COMPUTE_CAPABILITY}" ]]; then
+  die "Could not detect GPU compute capability via nvidia-smi"
+fi
+log "Compute capability: ${GPU_COMPUTE_CAPABILITY}"
+
 log "Initializing submodule frozen_repos/brian2"
 git submodule update --init frozen_repos/brian2
 
@@ -170,6 +177,14 @@ python - <<PY
 import pytest
 from brian2.tests import PreferencePlugin
 from brian2.core.preferences import prefs
+
+#
+# Avoid dependency on CUDA Samples' deviceQuery binary.
+# Use nvidia-smi's compute_cap result and disable GPU auto-detection.
+#
+prefs.devices.cuda_standalone.cuda_backend.detect_gpus = False
+prefs.devices.cuda_standalone.cuda_backend.gpu_id = 0
+prefs.devices.cuda_standalone.cuda_backend.compute_capability = float("${GPU_COMPUTE_CAPABILITY}")
 
 pref = PreferencePlugin(prefs, fail_for_not_implemented=False)
 pref.device = "cuda_standalone"
