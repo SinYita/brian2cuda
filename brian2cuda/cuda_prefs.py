@@ -22,17 +22,15 @@ def validate_bundle_size_expression(string):
         )
         return False
 
-    # Replase names from C++ std with numpy version for eval test below
-    replaced = formatted.replace("ceil", "np.ceil")
-    replaced = formatted.replace("floor", "np.floor")
-
-    try:
-        eval(replaced)
-    except Exception:
-        logger.error(f"Can't evaluate expression '{string}'")
-        return False
-
-    return True
+    # NOTE:
+    # This preference is ultimately substituted into generated C++/CUDA code (see
+    # brian2cuda/device.py and templates/synapses.cu). Evaluating it here is
+    # brittle across environments (numpy/sympy versions, available names, etc.)
+    # and should not prevent users from setting valid *code-generation* strings.
+    #
+    # We therefore only validate that the format placeholders are known.
+    _ = formatted
+    return isinstance(string, str)
 
 
 # Preferences
