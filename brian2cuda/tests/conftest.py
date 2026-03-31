@@ -27,3 +27,25 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "cuda_standalone: to be used with standalone_only marker"
     )
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Avoid accidentally running Brian2's full test runner.
+
+    Many brian2cuda tests use `from brian2 import *`. In older Brian2 versions,
+    this can import a callable named `test` (aliasing brian2.tests.run). Pytest
+    then collects it as a test function and starts running Brian2's entire test
+    suite (including doctests requiring sphinx/docutils), which is not intended
+    here and breaks the brian2cuda test run.
+    """
+    kept = []
+    for item in items:
+        func = getattr(item, "function", None)
+        if func is not None:
+            mod = getattr(func, "__module__", "")
+            name = getattr(func, "__name__", "")
+            if mod.startswith("brian2.tests") and name == "run":
+                continue
+        kept.append(item)
+    items[:] = kept

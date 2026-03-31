@@ -28,6 +28,7 @@ PYTHON_BIN="python3"
 VENV_DIR_NAME=".venv-brian2cuda-issue269"
 RUN_BENCH="0"
 PYTEST_ARGS="-q"
+TEST_TARGET="brian2cuda/tests"
 
 usage() {
   cat <<'EOF'
@@ -41,6 +42,7 @@ Options:
   --python <bin>        Python executable (default: python3)
   --venv <dir-name>     Venv directory name (default: .venv-brian2cuda-issue269)
   --pytest-args "<arg>" Extra pytest args (default: -q)
+  --tests <path>        Test path to run (default: brian2cuda/tests)
   --run-bench           Also run ./bench.sh after tests
   -h, --help            Show this help
 
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --python) PYTHON_BIN="$2"; shift 2 ;;
     --venv) VENV_DIR_NAME="$2"; shift 2 ;;
     --pytest-args) PYTEST_ARGS="$2"; shift 2 ;;
+    --tests) TEST_TARGET="$2"; shift 2 ;;
     --run-bench) RUN_BENCH="1"; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
@@ -172,7 +175,7 @@ pref = PreferencePlugin(prefs, fail_for_not_implemented=False)
 pref.device = "cuda_standalone"
 pref.device_options = {"directory": None, "with_output": False, "build_on_run": False}
 
-args = "${PYTEST_ARGS}".split() + ["brian2cuda/tests"]
+args = "${PYTEST_ARGS}".split() + ["${TEST_TARGET}"]
 raise SystemExit(pytest.main(args, plugins=[pref]))
 PY
 
