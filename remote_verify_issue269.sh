@@ -141,6 +141,9 @@ python -m pip install -U pip setuptools wheel
 log "Ensuring pytest available"
 python -m pip install -U pytest
 
+log "Pinning NumPy for frozen Brian2 compatibility (np.bool removal in NumPy>=1.24)"
+python -m pip install -U "numpy<1.24"
+
 log "Uninstalling any existing brian2 to avoid mixing versions"
 python -m pip uninstall -y brian2 >/dev/null 2>&1 || true
 
