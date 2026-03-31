@@ -158,10 +158,23 @@ print("brian2:", brian2.__file__)
 print("brian2cuda:", brian2cuda.__file__)
 PY
 
-log "Running test suite: pytest ${PYTEST_ARGS} brian2cuda/tests"
-# brian2cuda/tests/conftest.py forces starting with cuda_standalone (compile=False)
-# to satisfy older Brian2 pytest hooks that expect `get_device().project_dir`.
-pytest ${PYTEST_ARGS} brian2cuda/tests
+log "Running test suite via brian2 PreferencePlugin (sets config.brian_prefs)"
+# The frozen Brian2 version used by this repo relies on config.brian_prefs/config.device
+# being injected via brian2.tests.PreferencePlugin. Running pytest directly will
+# lead to many errors like:
+#   AttributeError: 'Config' object has no attribute 'brian_prefs'
+python - <<PY
+import pytest
+from brian2.tests import PreferencePlugin
+from brian2.core.preferences import prefs
+
+pref = PreferencePlugin(prefs, fail_for_not_implemented=False)
+pref.device = "cuda_standalone"
+pref.device_options = {"directory": None, "with_output": False, "build_on_run": False}
+
+args = "${PYTEST_ARGS}".split() + ["brian2cuda/tests"]
+raise SystemExit(pytest.main(args, plugins=[pref]))
+PY
 
 if [[ "${RUN_BENCH}" == "1" ]]; then
   if [[ -f "./bench.sh" ]]; then
